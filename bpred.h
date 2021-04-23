@@ -272,6 +272,54 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	     enum md_opcode op,		/* opcode of instruction */
 	     struct bpred_update_t *dir_update_ptr); /* pred state pointer */
 
+/* START: Loop termination buffer */
+struct ltb_item_t {
+    md_addr_t tag;
+    uint16_t spec_iter;
+    uint16_t non_spec;
+    uint16_t trip;
+    int conf;
+};
+
+struct ltb_t {
+  int capacity;
+  int size;
+  int replecement_ptr;
+  struct ltb_item_t * buffer;
+};
+
+struct ltb_t *
+ltb_create(int capacity);
+
+int
+ltb_lookup(struct ltb_t *ltb,
+           md_addr_t baddr);        /* branch address */
+
+void
+ltb_update(struct ltb_t *ltb,
+           md_addr_t baddr,        /* branch address */
+           md_addr_t btarget,        /* resolved branch target */
+           int taken,            /* non-zero if branch was taken */
+           int pred_taken,        /* non-zero if branch was pred taken */
+           int correct);
+
+/* print LTB stats */
+void
+ltb_stats(struct ltb_t *ltb,  /* branch predictor instance */
+      FILE *stream);    /* output stream */
+
+/* register LTB stats */
+void
+ltb_reg_stats(struct ltb_t *ltb,  /* branch predictor instance */
+    struct stat_sdb_t *sdb);/* stats database */
+
+void
+ltb_after_priming(struct ltb_t *ltb);
+
+/* END: Loop termination buffer */
+
+
+
 
 #ifdef foo0
 /* OBSOLETE */

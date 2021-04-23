@@ -983,3 +983,168 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	}
     }
 }
+
+/* START: Loop termination buffer */
+struct ltb_t *
+ltb_create(int capacity)
+{
+  struct ltb_t *ltb = malloc(sizeof(struct ltb_t));
+  ltb->capacity = capacity;
+  ltb->size = 0;
+  ltb->replecement_ptr = 0;
+  ltb->buffer = malloc(capacity * sizeof(struct ltb_item_t));
+  return ltb;
+};
+
+/* return 1 if predict loop terminate */
+int
+ltb_lookup(struct ltb_t *ltb,
+           /* branch address */md_addr_t baddr)
+{
+  /*
+   if baddr in LTB:
+           if LTB(baddr).SpecIter == LTB(baddr).Trip and LTB(baddr).Conf:
+               exit loop;
+           else:
+               LTB(baddr).SpecIter++;
+   */
+  for (int i = 0; i < ltb->size; i++) {
+    
+    struct ltb_item_t *curr = ltb->buffer + i;
+    
+    if (curr->tag == baddr) { /* baddr found in LTB */
+      if (curr->spec_iter == curr->trip) {
+        
+        if (curr->conf == 1) {
+          return 1;
+        } else {
+          return 0;
+        }
+        
+      } else {
+        
+        curr->spec_iter++;
+        return 0;
+        
+      }
+    }
+    
+  }
+  
+  return 0;
+  
+};
+
+void
+ltb_update(struct ltb_t *ltb,
+           md_addr_t baddr,        /* branch address */
+           md_addr_t btarget,        /* resolved branch target */
+           int taken,            /* non-zero if branch was taken */
+           int pred_taken,        /* non-zero if branch was pred taken */
+           int correct)
+{
+  /*
+   if baddr not in LTB:
+           if targetAddr < baddr and mispredict:
+               LTB.insert(baddr); LTB(baddr).init(0);
+   else:
+       if taken:
+           LTB(baddr).NonSpecIter++;
+       else:
+           if LTB(baddr).NonSpecIter == LTB(baddr).Trip:
+               LTB(baddr).Conf = Ture;
+           else:
+               LTB(baddr).Conf = false;
+               LTB(baddr).NonSpecIter++;
+               LTB(baddr).Trip = LTB(baddr).NonSpecIter;
+               LTB(baddr).SpecIter = LTB(baddr).SpecIter - LTB(baddr).NonSpecIter;
+               LTB(baddr).NonSpecIter = 0;
+   */
+  
+  /* baddr in LTB */
+  for (int i = 0; i < ltb->size; i++) {
+    struct ltb_item_t *curr = ltb->buffer + i;
+    if (curr->tag == baddr) {
+      
+      if (taken) {
+        curr->non_spec++;
+        return;
+      }
+      else
+      {
+        
+        if (curr->non_spec == curr->trip) {
+          curr->conf = 1;
+          return;
+        }
+        else
+        {
+          
+          curr->conf = 0;
+          curr->non_spec++;
+          curr->trip = curr->non_spec;
+          curr->spec_iter = curr->spec_iter - curr->non_spec;
+          curr->non_spec = 0;
+          return;
+          
+        }
+        
+      }
+      
+    }
+  }
+  
+  /*
+   baddr NOT in LTB,
+   check if it is a loop branch (branch to previous addr.),
+   if it's and predicted wrong, add it to LTB.
+   if full use RR replacement algo.
+   */
+  if (btarget < baddr && !correct) {
+    
+    /* increase the buffer size, since we never remove entry, the size will never reduce */
+    if (ltb->size < ltb->capacity) {
+      ltb->size++;
+    }
+    
+    /* round-robin replacement*/
+    if (ltb->replecement_ptr == ltb->capacity) {
+      ltb->replecement_ptr = 0; /* the replacement ptr had reach end */
+    }
+    
+    struct ltb_item_t *new = ltb->buffer + ltb->replecement_ptr;
+    ltb->replecement_ptr++; /* move the replacement ptr */
+    
+    /* set new value */
+    new->tag = baddr;
+    new->spec_iter = 0;
+    new->non_spec = 0;
+    new->trip = 0;
+    new->conf = 0;
+  }
+  
+};
+
+/* print LTB stats */
+void
+ltb_stats(struct ltb_t *ltb,  /* branch predictor instance */
+          FILE *stream)       /* output stream */
+{
+  
+};
+
+/* register LTB stats */
+void
+ltb_reg_stats(struct ltb_t *ltb,  /* branch predictor instance */
+              struct stat_sdb_t *sdb) /* stats database */
+{
+  
+};
+
+void
+ltb_after_priming(struct ltb_t *ltb)
+{
+  
+};
+
+/* END: Loop termination buffer */

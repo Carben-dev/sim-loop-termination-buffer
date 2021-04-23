@@ -108,6 +108,10 @@ static int btb_config[2] =
 /* branch predictor */
 static struct bpred_t *pred;
 
+/* Loop termination buffer */
+static struct ltb_t *ltb;
+static int ltb_capacity = 32;
+
 /* track number of insn and refs */
 static counter_t sim_num_refs = 0;
 
@@ -185,6 +189,9 @@ sim_reg_options(struct opt_odb_t *odb)
 void
 sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 {
+  /* create LTB */
+  ltb = ltb_create(ltb_capacity);
+  
   if (!mystricmp(pred_type, "taken"))
     {
       /* static predictor, not taken */
@@ -526,13 +533,28 @@ sim_main(void)
 				     /* return? */MD_IS_RETURN(op),
 				     /* stash an update ptr */&update_rec,
 				     /* stash return stack ptr */&stack_idx);
+            
+            /* check the baddr in LTB */
+            int loop_term = 0; /* flag indicate loop terminated */
+            loop_term = ltb_lookup(ltb, /* branch addr */regs.regs_PC);
 
-	      /* valid address returned from branch predictor? */
-	      if (!pred_PC)
+	      /* valid address returned from branch predictor?
+             * if loop termination is true will override the main predictor
+             * output.
+             */
+	      if (!pred_PC || loop_term)
 		{
 		  /* no predicted taken target, attempt not taken target */
 		  pred_PC = regs.regs_PC + sizeof(md_inst_t);
 		}
+            
+            /* update LTB */
+            ltb_update(ltb,
+                       regs.regs_PC, /* branch addr */
+                       regs.regs_NPC, /* resolved branch target */
+                       regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)), /* taken? */
+                       pred_PC != (regs.regs_PC + sizeof(md_inst_t)), /* pred taken? */
+                       pred_PC == regs.regs_NPC); /* correct pred? */
 
 	      bpred_update(pred,
 			   /* branch addr */regs.regs_PC,
@@ -544,6 +566,9 @@ sim_main(void)
 			   /* correct pred? */pred_PC == regs.regs_NPC,
 			   /* opcode */op,
 			   /* predictor update pointer */&update_rec);
+            
+            
+            
 	    }
 	}
 
