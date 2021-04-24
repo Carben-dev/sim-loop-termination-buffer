@@ -388,6 +388,8 @@ static struct cache_t *dtlb;
 /* branch predictor */
 static struct bpred_t *pred;
 
+static struct ltb_t *ltb;
+
 /* functional unit resource pool */
 static struct res_pool *fu_pool = NULL;
 
@@ -893,7 +895,9 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
 
   if (fetch_speed < 1)
     fatal("front-end speed must be positive and non-zero");
-
+  
+  ltb = ltb_create(32);
+  
   if (!mystricmp(pred_type, "perfect"))
     {
       /* perfect predictor */
@@ -1295,8 +1299,10 @@ sim_reg_stats(struct stat_sdb_t *sdb)   /* stats database */
 
   /* register predictor stats */
   if (pred)
+  {
     bpred_reg_stats(pred, sdb);
-
+    ltb_reg_stats(ltb, sdb);
+  }
   /* register cache stats */
   if (cache_il1
       && (cache_il1 != cache_dl1 && cache_il1 != cache_dl2))
@@ -1491,7 +1497,7 @@ struct RUU_station {
   /* inst info */
   md_inst_t IR;			/* instruction bits */
   enum md_opcode op;			/* decoded instruction opcode */
-  md_addr_t PC, next_PC, pred_PC;	/* inst PC, next PC, predicted PC */
+  md_addr_t PC, next_PC, pred_PC, ltb_PC;	/* inst PC, next PC, predicted PC */
   int in_LSQ;				/* non-zero if op is in LSQ */
   int ea_comp;				/* non-zero if op is an addr comp */
   int recover_inst;			/* start of mis-speculation? */
@@ -2227,6 +2233,30 @@ ruu_commit(void)
 	  && bpred_spec_update == spec_CT
 	  && (MD_OP_FLAGS(rs->op) & F_CTRL))
 	{
+//        /* update ltb stats */
+//        if (rs->PC > rs->next_PC && (MD_OP_FLAGS(rs->op) & F_COND)) {
+//          /* potential loop branch if have target < baddr, and it is conditional */
+//          ltb->loop_branch_potential++;
+//
+//          if (rs->next_PC == (rs->PC + sizeof(md_inst_t))) { /* loop term */
+//            ltb->loop_term++;
+//
+//            if (rs->pred_PC == rs->next_PC) {
+//              ltb->loop_term_hits_bpred++;
+//            }
+//
+//            if (rs->ltb_PC == rs->next_PC) {
+//              ltb->loop_term_hits_ltb++;
+//            }
+//
+//            if ((rs->pred_PC != rs->next_PC) && (rs->ltb_PC == rs->next_PC)) {
+//              ltb->loop_term_hits_ltb_only++;
+//            }
+//
+//          }
+//
+//        }
+        
 	  bpred_update(pred,
 		       /* branch address */rs->PC,
 		       /* actual target address */rs->next_PC,
@@ -2237,6 +2267,15 @@ ruu_commit(void)
                        /* correct pred? */rs->pred_PC == rs->next_PC,
                        /* opcode */rs->op,
                        /* dir predictor update pointer */&rs->dir_update);
+        
+//        if (rs->PC > rs->next_PC && MD_OP_FLAGS(rs->op) & F_COND) {
+//          ltb_update(ltb,
+//                     rs->PC, /* branch addr */
+//                     rs->next_PC, /* resolved branch target */
+//                     rs->next_PC != (rs->PC +sizeof(md_inst_t)), /* taken? */
+//                     rs->pred_PC != (rs->PC +sizeof(md_inst_t)), /* pred taken? */
+//                     rs->pred_PC == rs->next_PC); /* correct pred? */
+//        }
 	}
 
       /* invalidate RUU operation instance */
@@ -2416,6 +2455,30 @@ ruu_writeback(void)
 	  && !rs->in_LSQ
 	  && (MD_OP_FLAGS(rs->op) & F_CTRL))
 	{
+//        /* update ltb stats */
+//        if (rs->PC > rs->next_PC && (MD_OP_FLAGS(rs->op) & F_COND)) {
+//          /* potential loop branch if have target < baddr, and it is conditional */
+//          ltb->loop_branch_potential++;
+//
+//          if (rs->next_PC == (rs->PC + sizeof(md_inst_t))) { /* loop term */
+//            ltb->loop_term++;
+//
+//            if (rs->pred_PC == rs->next_PC) {
+//              ltb->loop_term_hits_bpred++;
+//            }
+//
+//            if (rs->ltb_PC == rs->next_PC) {
+//              ltb->loop_term_hits_ltb++;
+//            }
+//
+//            if ((rs->pred_PC != rs->next_PC) && (rs->ltb_PC == rs->next_PC)) {
+//              ltb->loop_term_hits_ltb_only++;
+//            }
+//
+//          }
+//
+//        }
+
 	  bpred_update(pred,
 		       /* branch address */rs->PC,
 		       /* actual target address */rs->next_PC,
@@ -4062,6 +4125,49 @@ ruu_dispatch(void)
 	  if (MD_OP_FLAGS(op) & F_CTRL)
 	    {
 	      sim_num_branches++;
+
+            int loop_term = 0; /* 1 = indicate loop terminated */
+            loop_term = ltb_lookup(ltb, /* branch addr */regs.regs_PC);
+
+            md_addr_t ltb_PC = 0;
+            if (loop_term)
+            {
+              ltb_PC = regs.regs_PC + sizeof(md_inst_t);
+            }
+
+            /* update ltb stats */
+            if (regs.regs_PC > target_PC && (MD_OP_FLAGS(op) & F_COND)) {
+              /* potential loop branch if have target < baddr, and it is conditional */
+              ltb->loop_branch_potential++;
+
+              if (regs.regs_NPC == (regs.regs_PC + sizeof(md_inst_t))) { /* loop term */
+                ltb->loop_term++;
+
+                if (pred_PC == regs.regs_NPC) {
+                  ltb->loop_term_hits_bpred++;
+                }
+
+                if (ltb_PC == regs.regs_NPC) {
+                  ltb->loop_term_hits_ltb++;
+                }
+
+                if ((pred_PC != regs.regs_NPC) && (ltb_PC == regs.regs_NPC)) {
+                  ltb->loop_term_hits_ltb_only++;
+                }
+
+              }
+
+            }
+
+            if (regs.regs_PC > target_PC && MD_OP_FLAGS(op) & F_COND) {
+              ltb_update(ltb,
+                         regs.regs_PC, /* branch addr */
+                         regs.regs_NPC, /* resolved branch target */
+                         regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)), /* taken? */
+                         pred_PC != (regs.regs_PC + sizeof(md_inst_t)), /* pred taken? */
+                         pred_PC == regs.regs_NPC); /* correct pred? */
+            }
+
 	      if (pred && bpred_spec_update == spec_ID)
 		{
 		  bpred_update(pred,
@@ -4281,7 +4387,7 @@ ruu_fetch(void)
 	  /* get the next predicted fetch address; only use branch predictor
 	     result for branches (assumes pre-decode bits); NOTE: returned
 	     value may be 1 if bpred can only predict a direction */
-	  if (MD_OP_FLAGS(op) & F_CTRL)
+        if (MD_OP_FLAGS(op) & F_CTRL){
 	    fetch_pred_PC =
 	      bpred_lookup(pred,
 			   /* branch address */fetch_regs_PC,
@@ -4291,9 +4397,19 @@ ruu_fetch(void)
 			   /* return? */MD_IS_RETURN(op),
 			   /* updt */&(fetch_data[fetch_tail].dir_update),
 			   /* RSB index */&stack_recover_idx);
-	  else
+          
+//          int loop_term = 0; /* 1 = indicate loop terminated */
+//          loop_term = ltb_lookup(ltb, /* branch addr */fetch_regs_PC);
+//          if (loop_term) {
+//            fetch_pred_PC = 0;
+//          }
+          
+        }
+        else
+        {
 	    fetch_pred_PC = 0;
-
+        }
+        
 	  /* valid address returned from branch predictor? */
 	  if (!fetch_pred_PC)
 	    {

@@ -286,6 +286,13 @@ struct ltb_t {
   int size;
   int replecement_ptr;
   struct ltb_item_t * buffer;
+  
+  /* stats */
+  counter_t loop_branch_potential;  /* # loop branch */
+  counter_t loop_term;              /* # loop terminate */
+  counter_t loop_term_hits_bpred;   /* # loop terminate hit by normal bpred */
+  counter_t loop_term_hits_ltb;     /* # loop terminate hit by LTB */
+  counter_t loop_term_hits_ltb_only;/* # loop terminate hit by LTB ONLY*/
 };
 
 struct ltb_t *

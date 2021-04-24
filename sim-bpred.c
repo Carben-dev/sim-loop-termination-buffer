@@ -294,6 +294,9 @@ sim_reg_stats(struct stat_sdb_t *sdb)
   /* register predictor stats */
   if (pred)
     bpred_reg_stats(pred, sdb);
+  if (ltb) {
+    ltb_reg_stats(ltb, sdb);
+  }
 }
 
 /* initialize the simulator */
@@ -535,26 +538,59 @@ sim_main(void)
 				     /* stash return stack ptr */&stack_idx);
             
             /* check the baddr in LTB */
-            int loop_term = 0; /* flag indicate loop terminated */
+            int loop_term = 0; /* 1 = indicate loop terminated */
             loop_term = ltb_lookup(ltb, /* branch addr */regs.regs_PC);
+            
+            md_addr_t ltb_PC = 0;
+            if (loop_term)
+            {
+              ltb_PC = regs.regs_PC + sizeof(md_inst_t);
+            }
 
 	      /* valid address returned from branch predictor?
              * if loop termination is true will override the main predictor
              * output.
              */
-	      if (!pred_PC || loop_term)
+	      if (!pred_PC)
 		{
 		  /* no predicted taken target, attempt not taken target */
 		  pred_PC = regs.regs_PC + sizeof(md_inst_t);
 		}
             
-            /* update LTB */
-            ltb_update(ltb,
-                       regs.regs_PC, /* branch addr */
-                       regs.regs_NPC, /* resolved branch target */
-                       regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)), /* taken? */
-                       pred_PC != (regs.regs_PC + sizeof(md_inst_t)), /* pred taken? */
-                       pred_PC == regs.regs_NPC); /* correct pred? */
+            /* update ltb stats */
+            if (regs.regs_PC > target_PC && (MD_OP_FLAGS(op) & F_COND)) {
+              /* potential loop branch if have target < baddr, and it is conditional */
+              ltb->loop_branch_potential++;
+              
+              if (regs.regs_NPC == (regs.regs_PC + sizeof(md_inst_t))) { /* loop term */
+                ltb->loop_term++;
+                
+                if (pred_PC == regs.regs_NPC) {
+                  ltb->loop_term_hits_bpred++;
+                }
+                
+                if (ltb_PC == regs.regs_NPC) {
+                  ltb->loop_term_hits_ltb++;
+                }
+                
+                if ((pred_PC != regs.regs_NPC) && (ltb_PC == regs.regs_NPC)) {
+                  ltb->loop_term_hits_ltb_only++;
+                }
+                
+              }
+              
+            }
+            
+            /* Only update LTB for potential loop branch */
+            if (regs.regs_PC > target_PC && MD_OP_FLAGS(op) & F_COND) {
+              ltb_update(ltb,
+                         regs.regs_PC, /* branch addr */
+                         regs.regs_NPC, /* resolved branch target */
+                         regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)), /* taken? */
+                         pred_PC != (regs.regs_PC + sizeof(md_inst_t)), /* pred taken? */
+                         pred_PC == regs.regs_NPC); /* correct pred? */
+            }
+            
 
 	      bpred_update(pred,
 			   /* branch addr */regs.regs_PC,

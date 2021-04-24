@@ -1138,13 +1138,39 @@ void
 ltb_reg_stats(struct ltb_t *ltb,  /* branch predictor instance */
               struct stat_sdb_t *sdb) /* stats database */
 {
-  
+  char buf[512], buf1[512], *name;
+
+  /* get a name for this predictor */
+  name = "ltb";
+
+  sprintf(buf, "%s.loop_branch", name);
+  stat_reg_counter(sdb, buf, "total number of potential loop branch",
+       &ltb->loop_branch_potential, 0, NULL);
+  sprintf(buf, "%s.loop_term", name);
+  stat_reg_counter(sdb, buf, "total number of potential terminated loop branch ",
+       &ltb->loop_term, 0, NULL);
+  sprintf(buf, "%s.loop_term_hits_bpred", name);
+  stat_reg_counter(sdb, buf, "total number of termination loop branch hit by bpred",
+       &ltb->loop_term_hits_bpred, 0, NULL);
+  sprintf(buf, "%s.loop_term_hits_ltb", name);
+  stat_reg_counter(sdb, buf, "total number of termination loop branch hit by LTB",
+       &ltb->loop_term_hits_ltb, 0, NULL);
+  sprintf(buf, "%s.loop_term_hits_ltb_only", name);
+  stat_reg_counter(sdb, buf, "total number of termination loop branch hit by LTB ONLY",
+       &ltb->loop_term_hits_ltb_only, 0, NULL);
 };
 
 void
 ltb_after_priming(struct ltb_t *ltb)
 {
+  if (ltb == NULL)
+    return;
   
+  ltb->loop_branch_potential = 0;
+  ltb->loop_term = 0;
+  ltb->loop_term_hits_bpred = 0;
+  ltb->loop_term_hits_ltb = 0;
+  ltb->loop_term_hits_ltb_only = 0;
 };
 
 /* END: Loop termination buffer */
