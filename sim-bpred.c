@@ -111,6 +111,7 @@ static struct bpred_t *pred;
 /* Loop termination buffer */
 static struct ltb_t *ltb;
 static int ltb_capacity = 32;
+static int ltb_repl_algo = ltb_repl_lru;
 
 /* track number of insn and refs */
 static counter_t sim_num_refs = 0;
@@ -190,7 +191,7 @@ void
 sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 {
   /* create LTB */
-  ltb = ltb_create(ltb_capacity);
+  ltb = ltb_create(ltb_capacity, ltb_repl_algo);
   
   if (!mystricmp(pred_type, "taken"))
     {

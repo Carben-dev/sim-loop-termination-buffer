@@ -54,6 +54,10 @@
 
 #define dassert(a) assert(a)
 
+#define ltb_repl_fifo 1
+#define ltb_repl_rand 2
+#define ltb_repl_lru 3
+
 #include <stdio.h>
 
 #include "host.h"
@@ -273,19 +277,25 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	     struct bpred_update_t *dir_update_ptr); /* pred state pointer */
 
 /* START: Loop termination buffer */
+/* record in the LTB */
 struct ltb_item_t {
-    md_addr_t tag;
-    int spec_iter;
-    int non_spec;
-    int trip;
-    int conf;
+  md_addr_t tag;
+  int spec_iter;
+  int non_spec;
+  int trip;
+  int conf;
+  
+  /* for lru use */
+  counter_t last_access_time;
 };
 
+/* LTB instance */
 struct ltb_t {
-  int capacity;
-  int size;
-  int replecement_ptr;
-  struct ltb_item_t * buffer;
+  int capacity;                     /* total capacity */
+  int size;                         /* current size */
+  int victim_ptr;                   /* the ptr to the victim record */
+  int repl_algo;                    /* 1=FIFO, 2=Random, 3=LRU */
+  struct ltb_item_t * buffer;       /* where ltb is store */
   
   /* stats */
   counter_t loop_branch_potential;  /* # loop branch */
@@ -296,7 +306,8 @@ struct ltb_t {
 };
 
 struct ltb_t *
-ltb_create(int capacity);
+ltb_create(int capacity,
+           int repl_algo);
 
 int
 ltb_lookup(struct ltb_t *ltb,
@@ -304,29 +315,32 @@ ltb_lookup(struct ltb_t *ltb,
 
 void
 ltb_update(struct ltb_t *ltb,
-           md_addr_t baddr,        /* branch address */
-           md_addr_t btarget,        /* resolved branch target */
-           int taken,            /* non-zero if branch was taken */
-           int pred_taken,        /* non-zero if branch was pred taken */
+           md_addr_t baddr,         /* branch address */
+           md_addr_t btarget,       /* resolved branch target */
+           int taken,               /* non-zero if branch was taken */
+           int pred_taken,          /* non-zero if branch was pred taken */
            int correct);
+
+void
+ltb_round_robin_update(struct ltb_t *ltb);
+void
+ltb_random_update(struct ltb_t *ltb);
+void
+ltb_lru_update(struct ltb_t *ltb);
 
 /* print LTB stats */
 void
-ltb_stats(struct ltb_t *ltb,  /* branch predictor instance */
-      FILE *stream);    /* output stream */
+ltb_stats(struct ltb_t *ltb,        /* branch predictor instance */
+      FILE *stream);                /* output stream */
 
 /* register LTB stats */
 void
-ltb_reg_stats(struct ltb_t *ltb,  /* branch predictor instance */
-    struct stat_sdb_t *sdb);/* stats database */
+ltb_reg_stats(struct ltb_t *ltb,    /* branch predictor instance */
+    struct stat_sdb_t *sdb);        /* stats database */
 
 void
 ltb_after_priming(struct ltb_t *ltb);
-
 /* END: Loop termination buffer */
-
-
-
 
 #ifdef foo0
 /* OBSOLETE */

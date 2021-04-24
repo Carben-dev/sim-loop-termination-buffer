@@ -53,6 +53,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <time.h>
+#include <limits.h>
 
 #include "host.h"
 #include "misc.h"
@@ -986,13 +988,21 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 
 /* START: Loop termination buffer */
 struct ltb_t *
-ltb_create(int capacity)
+ltb_create(int capacity,
+           int repl_algo)
 {
   struct ltb_t *ltb = malloc(sizeof(struct ltb_t));
+  
   ltb->capacity = capacity;
   ltb->size = 0;
-  ltb->replecement_ptr = 0;
+  ltb->victim_ptr = 0;
   ltb->buffer = malloc(capacity * sizeof(struct ltb_item_t));
+  ltb->repl_algo = repl_algo;
+  
+  if (repl_algo == ltb_repl_rand) {
+    srand(time(NULL));   // Initialization, should only be called once.
+  }
+  
   return ltb;
 };
 
@@ -1013,6 +1023,10 @@ ltb_lookup(struct ltb_t *ltb,
     struct ltb_item_t *curr = ltb->buffer + i;
     
     if (curr->tag == baddr) { /* baddr found in LTB */
+      
+      /* record access time */
+      curr->last_access_time = ltb->loop_branch_potential;
+      
       if (curr->spec_iter == curr->trip) {
         
         if (curr->conf == 1) {
@@ -1064,6 +1078,7 @@ ltb_update(struct ltb_t *ltb,
   /* baddr in LTB */
   for (int i = 0; i < ltb->size; i++) {
     struct ltb_item_t *curr = ltb->buffer + i;
+    
     if (curr->tag == baddr) {
       
       if (taken) {
@@ -1075,6 +1090,8 @@ ltb_update(struct ltb_t *ltb,
         
         if (curr->non_spec == curr->trip) {
           curr->conf = 1;
+          curr->spec_iter = 0;
+          curr->non_spec = 0;
           return;
         }
         else
@@ -1083,7 +1100,7 @@ ltb_update(struct ltb_t *ltb,
           curr->conf = 0;
           curr->non_spec++;
           curr->trip = curr->non_spec;
-          curr->spec_iter = curr->spec_iter - curr->non_spec;
+          curr->spec_iter = 0;
           curr->non_spec = 0;
           return;
           
@@ -1100,37 +1117,100 @@ ltb_update(struct ltb_t *ltb,
    if it's and predicted wrong, add it to LTB.
    if full use RR replacement algo.
    */
-  if (btarget < baddr && !correct) {
+  if (btarget < baddr ) {
     
     /* increase the buffer size, since we never remove entry, the size will never reduce */
     if (ltb->size < ltb->capacity) {
       ltb->size++;
     }
     
-    /* round-robin replacement*/
-    if (ltb->replecement_ptr == ltb->capacity) {
-      ltb->replecement_ptr = 0; /* the replacement ptr had reach end */
+    struct ltb_item_t *victim = ltb->buffer + ltb->victim_ptr;
+    
+    if (ltb->repl_algo == ltb_repl_fifo)
+    {
+      ltb_round_robin_update(ltb);
+    }
+    else if (ltb->repl_algo == ltb_repl_rand)
+    {
+      ltb_random_update(ltb);
+    }
+    else if (ltb->repl_algo == ltb_repl_lru)
+    {
+      ltb_lru_update(ltb);
     }
     
-    struct ltb_item_t *new = ltb->buffer + ltb->replecement_ptr;
-    ltb->replecement_ptr++; /* move the replacement ptr */
-    
     /* set new value */
-    new->tag = baddr;
-    new->spec_iter = 0;
-    new->non_spec = 0;
-    new->trip = 0;
-    new->conf = 0;
+    victim->tag = baddr;
+    victim->spec_iter = 0;
+    victim->non_spec = 0;
+    victim->trip = 0;
+    victim->conf = 0;
+    victim->last_access_time = ltb->loop_branch_potential;
   }
   
 };
+
+/* round-robin replacement */
+void
+ltb_round_robin_update(struct ltb_t *ltb)
+{
+  
+  ltb->victim_ptr++; /* move the replacement ptr */
+  
+  if (ltb->victim_ptr == ltb->capacity) {
+    ltb->victim_ptr = 0; /* the replacement ptr had reach end */
+  }
+  
+}
+
+void
+ltb_random_update(struct ltb_t *ltb)
+{
+  /* if buffer not full, simple increate the ptr */
+  if (ltb->size < ltb->capacity) {
+    ltb->victim_ptr++;
+    return;
+  }
+  
+  int r = rand();      // Returns a pseudo-random integer between 0 and RAND_MAX.
+  
+  ltb->victim_ptr = r % ltb->capacity;
+}
+
+void
+ltb_lru_update(struct ltb_t *ltb)
+{
+  /* if buffer not full, simple increate the ptr */
+  if (ltb->size < ltb->capacity) {
+    ltb->victim_ptr++;
+    return;
+  }
+  
+  /* find the record with the smallest access time */
+  int smallest_record_idx = INT_MAX;
+  int smallest_access_time = INT_MAX;
+  
+  for (int i = 0; i < ltb->size; i++) {
+    
+    struct ltb_item_t *curr = ltb->buffer + i;
+    
+    if (curr->last_access_time < smallest_access_time) {
+      smallest_access_time = curr->last_access_time;
+      smallest_record_idx = i;
+    }
+    
+  }
+  
+  ltb->victim_ptr = smallest_record_idx;
+  
+}
 
 /* print LTB stats */
 void
 ltb_stats(struct ltb_t *ltb,  /* branch predictor instance */
           FILE *stream)       /* output stream */
 {
-  
+  /* Placeholder */
 };
 
 /* register LTB stats */
@@ -1156,7 +1236,7 @@ ltb_reg_stats(struct ltb_t *ltb,  /* branch predictor instance */
   stat_reg_counter(sdb, buf, "total number of termination loop branch hit by LTB",
        &ltb->loop_term_hits_ltb, 0, NULL);
   sprintf(buf, "%s.loop_term_hits_ltb_only", name);
-  stat_reg_counter(sdb, buf, "total number of termination loop branch hit by LTB ONLY",
+  stat_reg_counter(sdb, buf, "total number of termination loop branch miss by bpred but hit by LTB",
        &ltb->loop_term_hits_ltb_only, 0, NULL);
 };
 

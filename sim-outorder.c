@@ -389,6 +389,8 @@ static struct cache_t *dtlb;
 static struct bpred_t *pred;
 
 static struct ltb_t *ltb;
+static int ltb_capacity = 32;
+static int ltb_repl_algo = ltb_repl_lru;
 
 /* functional unit resource pool */
 static struct res_pool *fu_pool = NULL;
@@ -896,7 +898,7 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
   if (fetch_speed < 1)
     fatal("front-end speed must be positive and non-zero");
   
-  ltb = ltb_create(32);
+  ltb = ltb_create(ltb_capacity, ltb_repl_algo);
   
   if (!mystricmp(pred_type, "perfect"))
     {
