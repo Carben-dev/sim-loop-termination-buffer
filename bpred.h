@@ -275,9 +275,9 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 /* START: Loop termination buffer */
 struct ltb_item_t {
     md_addr_t tag;
-    uint16_t spec_iter;
-    uint16_t non_spec;
-    uint16_t trip;
+    int spec_iter;
+    int non_spec;
+    int trip;
     int conf;
 };
 

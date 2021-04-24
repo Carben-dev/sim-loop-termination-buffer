@@ -1138,7 +1138,7 @@ void
 ltb_reg_stats(struct ltb_t *ltb,  /* branch predictor instance */
               struct stat_sdb_t *sdb) /* stats database */
 {
-  char buf[512], buf1[512], *name;
+  char buf[512], *name;
 
   /* get a name for this predictor */
   name = "ltb";
